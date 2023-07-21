@@ -1,0 +1,9 @@
+.Rating-star {
+    color: slategray;
+    font-size: xx-large;
+}
+
+.Rating-star.selected {
+    color: yellowgreen;
+    font-size: xx-large;
+}
