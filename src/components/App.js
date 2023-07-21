@@ -1,8 +1,11 @@
 import ReviewList from "./ReviewList";
 import ReviewForm from "./ReviewForm";
 //import mockItems from "../mock.json";
-import { useEffect, useState } from "react";
-import { getReviews } from "../api";
+import { useEffect, useState, useCallback } from "react";
+import { createReview, deleteReview, getReviews, updateReview } from "../api";
+import useAsync from "../hooks/useAsync";
+import { LocaleProvider } from "../contexts/LocaleContext";
+import LocaleSelect from "./LocaleSelect";
 
 const LIMIT = 6;
 
@@ -11,70 +14,89 @@ function App() {
   const [order, setOrder] = useState("createdAt");
   const [offset, setOffset] = useState(0);
   const [hasNext, setHasNext] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [loadingError, setLoadingError] = useState(null);
+  const [isLoading, loadingError, getReviewsAsync] = useAsync(getReviews);
 
   const sortedItems = items.sort((a, b) => b[order] - a[order]);
 
   const handleNewestClick = () => setOrder("createdAt");
   const handleBestClick = () => setOrder("rating");
 
-  const handleDelete = (id) => {
-    const nextItems = items.filter((item) => item.id !== id);
-    setItems(nextItems);
+  const handleDelete = async (id) => {
+    const result = await deleteReview(id);
+
+    if (!result) return;
+
+    setItems((prevItems) => prevItems.filter((item) => item.id !== id));
   };
 
-  const handleLoad = async (options) => {
-    let result;
-    try {
-      setIsLoading(true);
-      setLoadingError(null);
-      result = await getReviews(options);
-    } catch (error) {
-      setLoadingError(error);
-      return;
-    } finally {
-      setIsLoading(false);
-    }
+  const handleLoad = useCallback(
+    async (options) => {
+      let result = await getReviewsAsync(options);
+      if (!result) return;
 
-    const { reviews, paging } = result;
+      const { reviews, paging } = result;
 
-    if (options.offset === 0) {
-      setItems(reviews);
-    } else {
-      setItems((prevItems) => [...prevItems, ...reviews]);
-    }
-    setOffset(options.offset + reviews.length);
-    setHasNext(paging.hasNext);
-  };
+      if (options.offset === 0) {
+        setItems(reviews);
+      } else {
+        setItems((prevItems) => [...prevItems, ...reviews]);
+      }
+      setOffset(options.offset + reviews.length);
+      setHasNext(paging.hasNext);
+    },
+    [getReviewsAsync]
+  );
 
   const handleLoadMore = () => {
     handleLoad({ order, offset, limit: LIMIT });
   };
 
-  const handleSubmitSuccess = (review) => {
+  const handleCreateSuccess = (review) => {
     setItems((prevItems) => [review, ...prevItems]);
-  }
+  };
+
+  const handleUpdateSuccess = (review) => {
+    setItems((prevItems) => {
+      const splitIdx = prevItems.findIndex((item) => item.id === review.id);
+
+      return [
+        ...prevItems.slice(0, splitIdx),
+        review,
+        ...prevItems.slice(splitIdx + 1),
+      ];
+    });
+  };
 
   useEffect(() => {
     handleLoad({ order, offset: 0, limit: LIMIT });
-  }, [order]);
+  }, [order, handleLoad]);
 
   return (
-    <div>
+    <LocaleProvider defaultValue={"ko"}>
       <div>
-        <button onClick={handleNewestClick}>최신순</button>
-        <button onClick={handleBestClick}>베스트순</button>
+        <LocaleSelect />
+        <div>
+          <button onClick={handleNewestClick}>최신순</button>
+          <button onClick={handleBestClick}>베스트순</button>
+        </div>
+        <ReviewForm
+          onSubmit={createReview}
+          onSubmitSuccess={handleCreateSuccess}
+        />
+        <ReviewList
+          items={sortedItems}
+          onDelete={handleDelete}
+          onUpdate={updateReview}
+          onUpdateSuccess={handleUpdateSuccess}
+        />
+        {hasNext && (
+          <button disabled={isLoading} onClick={handleLoadMore}>
+            더 보기
+          </button>
+        )}
+        {loadingError?.message && <span>{loadingError.message}</span>}
       </div>
-      <ReviewForm onSubmitSuccess={handleSubmitSuccess} />
-      <ReviewList items={sortedItems} onDelete={handleDelete} />
-      {hasNext && (
-        <button disabled={isLoading} onClick={handleLoadMore}>
-          더 보기
-        </button>
-      )}
-      {loadingError?.message && <span>{loadingError.message}</span>}
-    </div>
+    </LocaleProvider>
   );
 }
 
